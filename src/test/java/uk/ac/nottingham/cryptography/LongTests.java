@@ -102,5 +102,30 @@ public class LongTests {
         assertEquals(ct, HexUtils.bytesToHex(block));
         assertEquals(tag, HexUtils.bytesToHex(tagbytes));
     }
+
+    @Test
+    @Order(4)
+    void Encrypt100MBTest() {
+        String key = "0a90afd214fa6b6cf59606e7f566138a";
+        String iv = "bca4b4df1d16571c576070a2";
+        String aad = "a1cc17dfbda5a748459d8969a94fe274";
+        String ct = "d8afe1d15c35d6dfbcac9d0cd2d58d82";
+        String tag = "706ef053d5b1e6b746315fe9ab4d030b";
+
+        byte[] tagbytes = new byte[16];
+        byte[] block = new byte[16];
+
+        cipher.init(new AEADParams(HexUtils.hexToBytes(key), HexUtils.hexToBytes(iv), CipherMode.ENCRYPT));
+        cipher.updateAAD(HexUtils.hexToBytes(aad));
+
+        for (int i = 0; i < 6400000; i++) {
+            cipher.processBlock(block);
+        }
+
+        cipher.finalise(tagbytes);
+
+        assertEquals(ct, HexUtils.bytesToHex(block));
+        assertEquals(tag, HexUtils.bytesToHex(tagbytes));
+    }
 }
 
