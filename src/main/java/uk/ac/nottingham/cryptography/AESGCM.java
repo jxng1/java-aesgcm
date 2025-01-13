@@ -2,6 +2,7 @@ package uk.ac.nottingham.cryptography;
 
 import uk.ac.nottingham.cryptography.aes.AES128Encryptor;
 import uk.ac.nottingham.cryptography.aes.AES128EncryptorImpl;
+import uk.ac.nottingham.cryptography.galois.GF128FastImpl;
 import uk.ac.nottingham.cryptography.galois.GF128Multiplier;
 import uk.ac.nottingham.cryptography.galois.GF128MultiplierImpl;
 
@@ -22,28 +23,27 @@ public class AESGCM implements AEADCipher {
     private CipherMode mode;
     private byte[] Y;
     private byte[] Y0;
-    private byte[] AAD;
-    private byte[] C;
 
+    // Tag
     private byte[] T;
+    private int aLength;
+    private int cLength;
 
     public AESGCM() {
         GF = new GF128MultiplierImpl();
+        //GF = new GF128FastImpl();
         encryptor = new AES128EncryptorImpl();
-
-        // Add your code here
     }
 
     @Override
     public void init(AEADParams params) {
-        // Add your code here
-        // C = new byte[0];
-        AAD = new byte[0];
         Y = new byte[12];
-        T = new byte[0];
+
+        T = new byte[16];
+        aLength = 0;
+        cLength = 0;
 
         mode = params.getMode();
-
         encryptor.init(params.getKey()); // init cipher
 
         byte[] encrypted = new byte[16]; // 0^128
@@ -55,22 +55,23 @@ public class AESGCM implements AEADCipher {
             temp[15] = 0x01; // set last bit of entire sequence to 1
 
             Y0 = temp; // set for finalise use
-            Y = Y0;
         } else { // len(IV) != 96
             Y0 = GHASH(new byte[0], params.getIv()); // calculate ghash using IV
-            Y = Y0;
         }
+
+        Y = Y0;
     }
 
     @Override
     public void updateAAD(byte[] data) {
-        // Add your code here
-//        byte[] temp = new byte[AAD.length + data.length]; // create new array for concatenated AAD
-//        System.arraycopy(AAD, 0, temp, 0, AAD.length); // copy existing AAD to temp
-//        System.arraycopy(data, 0, temp, AAD.length, data.length); // copy new data to temp after existing AAD
-//        AAD = temp; // assign temp back to AAD
+        aLength += data.length;
 
-        AAD = data.clone();
+        if (data.length < 16) {
+            data = zeroPad(data);
+        }
+
+        T = XOR(T, data);
+        GF.multiplyByH(T);
     }
 
     @Override
@@ -82,11 +83,17 @@ public class AESGCM implements AEADCipher {
         byte[] encryptedCounter = Arrays.copyOf(Y, Y.length);
         encryptor.encryptBlock(Y, encryptedCounter);
 
+        cLength += data.length;
+
         if (mode == CipherMode.DECRYPT) {
-            // append ciphertext before we XOR it to calculate tag later
-            byte[] temp = Arrays.copyOf(C, C.length + data.length);
-            System.arraycopy(data, 0, temp, C.length, data.length);
-            //C = temp;
+            byte[] tmp = data.clone();
+
+            if (tmp.length < 16) {
+                tmp = zeroPad(tmp);
+            }
+
+            T = XOR(T, tmp);
+            GF.multiplyByH(T);
         }
 
         // xor with plaintext
@@ -95,23 +102,33 @@ public class AESGCM implements AEADCipher {
         }
 
         if (mode == CipherMode.ENCRYPT) {
-            // append to ciphertext
-            byte[] temp = Arrays.copyOf(C, C.length + data.length);
-            System.arraycopy(data, 0, temp, C.length, data.length);
-            // C = temp;
+            byte[] tmp = data.clone();
+
+            if (tmp.length < 16) {
+                tmp = zeroPad(tmp);
+            }
+
+            T = XOR(T, tmp);
+            GF.multiplyByH(T);
         }
-
-        byte[] Ym = GHASH(AAD, data);
-
-        byte[] encryptedY0 = new byte[Y0.length];
-        encryptor.encryptBlock(Y0, encryptedY0);
-
-        T = XOR(Ym, encryptedY0);
     }
 
     @Override
     public void finalise(byte[] out) {
         // Add your code here
+        byte[] lenConcat = ByteBuffer.allocate(16)
+                .putLong(aLength * 8L)
+                .putLong(cLength * 8L)
+                .array();
+
+        T = XOR(T, lenConcat);
+        GF.multiplyByH(T);
+
+        byte[] encryptedY0 = new byte[Y0.length];
+        encryptor.encryptBlock(Y0, encryptedY0);
+
+        T = XOR(T, encryptedY0);
+
         System.arraycopy(T, 0, out, 0, T.length);
     }
 
@@ -190,14 +207,11 @@ public class AESGCM implements AEADCipher {
     }
 
     private byte[] zeroPad(byte[] data) {
-        int padLength = 16 - (data.length % 16);
-        if (padLength != 16) {
-            byte[] padded = new byte[data.length + padLength];
-            System.arraycopy(data, 0, padded, 0, data.length);
-
-            return padded;
+        if (data.length < 16) {
+            byte[] paddedBlock = new byte[16];
+            System.arraycopy(data, 0, paddedBlock, 0, data.length);
+            return paddedBlock;
         }
-
         return data;
     }
 }
