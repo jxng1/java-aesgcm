@@ -29,9 +29,12 @@ public class AESGCM implements AEADCipher {
     private int aLength;
     private int cLength;
 
+    // Late Tag
+    private byte[] T_C;
+    private int m;
+
     public AESGCM() {
-        GF = new GF128MultiplierImpl();
-        //GF = new GF128FastImpl();
+        GF = new GF128FastImpl();
         encryptor = new AES128EncryptorImpl();
     }
 
@@ -42,6 +45,9 @@ public class AESGCM implements AEADCipher {
         T = new byte[16];
         aLength = 0;
         cLength = 0;
+
+        T_C = new byte[16];
+        m = 1;
 
         mode = params.getMode();
         encryptor.init(params.getKey()); // init cipher
@@ -70,8 +76,18 @@ public class AESGCM implements AEADCipher {
             data = zeroPad(data);
         }
 
-        T = XOR(T, data);
-        GF.multiplyByH(T);
+        if (cLength > 0) {
+            GF.multiplyByH(T);
+
+            for (int i = 0; i < m; i++) {
+                GF.multiplyByH(data);
+            }
+
+            T = XOR(T, data);
+        } else {
+            T = XOR(T, data);
+            GF.multiplyByH(T);
+        }
     }
 
     @Override
@@ -92,7 +108,8 @@ public class AESGCM implements AEADCipher {
                 tmp = zeroPad(tmp);
             }
 
-            T = XOR(T, tmp);
+            T_C = XOR(T_C, tmp);
+            GF.multiplyByH(T_C);
             GF.multiplyByH(T);
         }
 
@@ -108,19 +125,22 @@ public class AESGCM implements AEADCipher {
                 tmp = zeroPad(tmp);
             }
 
-            T = XOR(T, tmp);
+            T_C = XOR(T_C, tmp);
+            GF.multiplyByH(T_C);
             GF.multiplyByH(T);
         }
+
+        m++;
     }
 
     @Override
     public void finalise(byte[] out) {
-        // Add your code here
         byte[] lenConcat = ByteBuffer.allocate(16)
                 .putLong(aLength * 8L)
                 .putLong(cLength * 8L)
                 .array();
 
+        T = XOR(T, T_C);
         T = XOR(T, lenConcat);
         GF.multiplyByH(T);
 
