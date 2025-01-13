@@ -16,7 +16,6 @@ import java.util.Arrays;
  * the test suite, which is disabled by default.
  */
 public class GF128FastImpl implements GF128Multiplier {
-    private final byte[][][] M = new byte[16][256][16]; // 16 * 256 * 16 = 65536
     private final int[][][] M8 = new int[32][16][]; // P^8i, 32 nibbles(16 bytes) * 16 * 16 = ~8192(less due to variable array size)
     private byte[] H = null;
 
@@ -25,7 +24,6 @@ public class GF128FastImpl implements GF128Multiplier {
         // Add your code here
         this.H = H;
 
-        computeM();
         computeM8();
     }
 
@@ -59,15 +57,6 @@ public class GF128FastImpl implements GF128Multiplier {
         intToBigEndian(Z[3], ret, 12);
 
         System.arraycopy(ret, 0, X, 0, ret.length);
-
-        // non-optimised version
-//        byte[] Z = new byte[16];
-//        for (int i = 0; i < 16; i++)
-//        {
-//            int idx = X[i] & 0xFF;
-//            xor(Z, M[i][idx]);
-//        }
-//        System.arraycopy(Z, 0, X, 0, Z.length);
     }
 
     @Override
@@ -97,21 +86,6 @@ public class GF128FastImpl implements GF128Multiplier {
     public byte[] getH() {
         // Add your code here
         return this.H;
-    }
-
-    private void computeM() {
-        for (int i = 0; i < 16; i++) {
-            for (int j = 0; j < 256; j++) {
-                byte b = (byte) j;
-
-                byte[] A = new byte[16];
-                A[i] = b;
-
-                multiply(A, H);
-
-                M[i][j] = A;
-            }
-        }
     }
 
     private void computeM8() {
